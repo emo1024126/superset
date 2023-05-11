@@ -50,7 +50,6 @@ export const EXPAND_TABLE = 'EXPAND_TABLE';
 export const COLLAPSE_TABLE = 'COLLAPSE_TABLE';
 export const QUERY_EDITOR_SETDB = 'QUERY_EDITOR_SETDB';
 export const QUERY_EDITOR_SET_SCHEMA = 'QUERY_EDITOR_SET_SCHEMA';
-export const QUERY_EDITOR_SET_TABLE_OPTIONS = 'QUERY_EDITOR_SET_TABLE_OPTIONS';
 export const QUERY_EDITOR_SET_TITLE = 'QUERY_EDITOR_SET_TITLE';
 export const QUERY_EDITOR_SET_AUTORUN = 'QUERY_EDITOR_SET_AUTORUN';
 export const QUERY_EDITOR_SET_SQL = 'QUERY_EDITOR_SET_SQL';
@@ -358,12 +357,70 @@ export function fetchQueryResults(query, displayLimit) {
   };
 }
 
+const quotes = '\'"`'.split('');
+const quotedBlockHash = shortid.generate();
+const quotedBlockMatch = new RegExp(`${quotedBlockHash}:\\d+:`, 'g');
+
+function splitByQuotedBlock(str) {
+  const chunks = [];
+  let currentQuote = '';
+  let chunkStart = 0;
+
+  let i = 0;
+  while (i < str.length) {
+    const currentChar = str[i];
+    if (
+      currentQuote ? currentChar === currentQuote : quotes.includes(currentChar)
+    ) {
+      let chunk;
+      if (currentQuote) {
+        chunk = str.substring(chunkStart, i + 1);
+        chunkStart = i + 1;
+        currentQuote = '';
+      } else {
+        chunk = str.substring(chunkStart, i);
+        chunkStart = i;
+        currentQuote = currentChar;
+      }
+      if (chunk) {
+        chunks.push(chunk);
+      }
+    }
+    i += 1;
+  }
+
+  if (chunkStart < str.length) {
+    const lastChunk = str.substring(chunkStart);
+    if (lastChunk) {
+      chunks.push(lastChunk);
+    }
+  }
+
+  return chunks;
+}
+
 export function cleanSqlComments(sql) {
   if (!sql) return '';
   // it sanitizes the following comment block groups
   // group 1 -> /* */
   // group 2 -> --
-  return sql.replace(/(--.*?$|\/\*[\s\S]*?\*\/)\n?/gm, '\n').trim();
+  const chunks = splitByQuotedBlock(sql);
+  return (
+    chunks
+      // replace quoted blocks in a hash format
+      .map((chunk, index) =>
+        quotes.includes(chunk[0]) ? `${quotedBlockHash}:${index}:` : chunk,
+      )
+      .join('')
+      // Clean out the commented-out blocks
+      .replace(/(--.*?$|\/\*[\s\S]*?\*\/)\n?/gm, '\n')
+      .trim()
+      // restore quoted block to the original value
+      .replace(
+        quotedBlockMatch,
+        quotedBlock => chunks[quotedBlock.match(/:\d+/)[0].substring(1)],
+      )
+  );
 }
 
 export function runQuery(query) {
@@ -957,10 +1014,6 @@ export function queryEditorSetSchema(queryEditor, schema) {
   };
 }
 
-export function queryEditorSetTableOptions(queryEditor, options) {
-  return { type: QUERY_EDITOR_SET_TABLE_OPTIONS, queryEditor, options };
-}
-
 export function queryEditorSetAutorun(queryEditor, autorun) {
   return function (dispatch) {
     const sync = isFeatureEnabled(FeatureFlag.SQLLAB_BACKEND_PERSISTENCE)
@@ -1506,7 +1559,7 @@ export function createDatasourceStarted() {
   return { type: CREATE_DATASOURCE_STARTED };
 }
 export function createDatasourceSuccess(data) {
-  const datasource = `${data.table_id}__table`;
+  const datasource = `${data.id}__table`;
   return { type: CREATE_DATASOURCE_SUCCESS, datasource };
 }
 export function createDatasourceFailed(err) {
@@ -1516,9 +1569,18 @@ export function createDatasourceFailed(err) {
 export function createDatasource(vizOptions) {
   return dispatch => {
     dispatch(createDatasourceStarted());
+    const { dbId, schema, datasourceName, sql } = vizOptions;
     return SupersetClient.post({
-      endpoint: '/superset/sqllab_viz/',
-      postPayload: { data: vizOptions },
+      endpoint: '/api/v1/dataset/',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        database: dbId,
+        schema,
+        sql,
+        table_name: datasourceName,
+        is_managed_externally: false,
+        external_url: null,
+      }),
     })
       .then(({ json }) => {
         dispatch(createDatasourceSuccess(json));

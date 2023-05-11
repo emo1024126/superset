@@ -57,22 +57,28 @@ get_related_schema = {
 
 
 class RelatedResultResponseSchema(Schema):
-    value = fields.Integer(description="The related item identifier")
-    text = fields.String(description="The related item string representation")
-    extra = fields.Dict(description="The extra metadata for related item")
+    value = fields.Integer(metadata={"description": "The related item identifier"})
+    text = fields.String(
+        metadata={"description": "The related item string representation"}
+    )
+    extra = fields.Dict(metadata={"description": "The extra metadata for related item"})
 
 
 class RelatedResponseSchema(Schema):
-    count = fields.Integer(description="The total number of related values")
+    count = fields.Integer(
+        metadata={"description": "The total number of related values"}
+    )
     result = fields.List(fields.Nested(RelatedResultResponseSchema))
 
 
 class DistinctResultResponseSchema(Schema):
-    text = fields.String(description="The distinct item")
+    text = fields.String(metadata={"description": "The distinct item"})
 
 
 class DistincResponseSchema(Schema):
-    count = fields.Integer(description="The total number of distinct values")
+    count = fields.Integer(
+        metadata={"description": "The total number of distinct values"}
+    )
     result = fields.List(fields.Nested(DistinctResultResponseSchema))
 
 
@@ -525,7 +531,7 @@ class BaseSupersetModelRestApi(ModelRestApi, BaseSupersetApiMixin):
         self.send_stats_metrics(response, self.delete.__name__, duration)
         return response
 
-    @expose("/related/<column_name>", methods=["GET"])
+    @expose("/related/<column_name>", methods=("GET",))
     @protect()
     @safe
     @statsd_metrics
@@ -604,7 +610,7 @@ class BaseSupersetModelRestApi(ModelRestApi, BaseSupersetApiMixin):
 
         return self.response(200, count=total_rows, result=result)
 
-    @expose("/distinct/<column_name>", methods=["GET"])
+    @expose("/distinct/<column_name>", methods=("GET",))
     @protect()
     @safe
     @statsd_metrics
